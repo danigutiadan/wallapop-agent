@@ -44,12 +44,12 @@ async function scrapeWallapop(searchConfig) {
         targetUrl = `https://es.wallapop.com/search?${params.join('&')}`;
     }
 
-    console.log(`[Scraper] Navigating to: ${targetUrl}`);
+    console.log(`🕷️ [Scraper] Navigating to: ${targetUrl}`);
     
     // Anti-bot: Random delay between 2 and 12 seconds
     const delayMs = Math.floor(Math.random() * 10000) + 2000;
     const randomUserAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-    console.log(`[Scraper] Anti-bot measures: Sleeping for ${delayMs}ms before launching browser...`);
+    console.log(`🕷️ [Scraper] Anti-bot measures: Sleeping for ${delayMs}ms before launching browser...`);
     await new Promise(resolve => setTimeout(resolve, delayMs));
     
     const browser = await chromium.launch({
@@ -88,7 +88,7 @@ async function scrapeWallapop(searchConfig) {
                     
                     // Si el tipo de sección es resultados orgánicos o está vacío (0 resultados), resolvemos
                     if (sectionType === 'organic_search_results' || sectionItems.length >= 0) {
-                        console.log(`[Scraper] Intercepted search section: type="${sectionType}", itemsCount=${sectionItems.length}`);
+                        console.log(`🕷️ [Scraper] Intercepted search section: type="${sectionType}", itemsCount=${sectionItems.length}`);
                         items = sectionItems;
                         resolve(true);
                     }
@@ -100,22 +100,22 @@ async function scrapeWallapop(searchConfig) {
         
         // Safety timeout to resolve even if no API response is intercepted (so we don't hang forever)
         apiInterceptionTimeout = setTimeout(async () => {
-            console.log(`[Scraper] Warning: API interception timeout reached.`);
+            console.log(`🕷️ [Scraper] Warning: API interception timeout reached.`);
             try {
                 const title = await page.title();
                 const content = await page.content();
-                console.log(`[Scraper] Page Title at timeout: "${title}"`);
+                console.log(`🕷️ [Scraper] Page Title at timeout: "${title}"`);
                 
                 const lowerContent = content.toLowerCase();
                 if (lowerContent.includes('datadome') || lowerContent.includes('captcha') || lowerContent.includes('access denied') || title.includes('Attention Required')) {
-                    console.log(`[Scraper] 🚨 BLOCK DETECTED: Wallapop has blocked this request (Datadome / Captcha).`);
+                    console.log(`🕷️ [Scraper] 🚨 BLOCK DETECTED: Wallapop has blocked this request (Datadome / Captcha).`);
                 } else if (title === '') {
-                    console.log(`[Scraper] 🚨 BLOCK DETECTED: Page is completely blank (possible IP ban).`);
+                    console.log(`🕷️ [Scraper] 🚨 BLOCK DETECTED: Page is completely blank (possible IP ban).`);
                 } else {
-                    console.log(`[Scraper] No obvious bot blocks detected in HTML. The page might be very slow or the API structure changed.`);
+                    console.log(`🕷️ [Scraper] No obvious bot blocks detected in HTML. The page might be very slow or the API structure changed.`);
                 }
             } catch (e) {
-                console.log(`[Scraper] Could not extract debug info from page: ${e.message}`);
+                console.log(`🕷️ [Scraper] Could not extract debug info from page: ${e.message}`);
             }
             resolve(false);
         }, 45000); // Increased to 45 seconds for GitHub Actions runners
@@ -131,7 +131,7 @@ async function scrapeWallapop(searchConfig) {
         await searchDataPromise;
         
     } catch (error) {
-        console.error(`[Scraper] Error scraping URL ${targetUrl}:`, error.message);
+        console.error(`🕷️ [Scraper] Error scraping URL ${targetUrl}:`, error.message);
     } finally {
         if (apiInterceptionTimeout) {
             clearTimeout(apiInterceptionTimeout);

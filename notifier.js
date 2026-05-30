@@ -15,7 +15,7 @@ function formatDescription(desc, limit = 200) {
  */
 async function sendTelegramNotification(telegramConfig, item, searchName) {
     if (!telegramConfig.bot_token || !telegramConfig.chat_id) {
-        console.error('[Notifier] Telegram is enabled but bot_token or chat_id is missing.');
+        console.error('📨 [Notifier] Telegram is enabled but bot_token or chat_id is missing.');
         return false;
     }
 
@@ -67,14 +67,14 @@ async function sendTelegramNotification(telegramConfig, item, searchName) {
 
         const json = await response.json();
         if (json.ok) {
-            console.log(`[Notifier] Telegram notification sent for item: "${item.title}"`);
+            console.log(`📨 [Notifier] Telegram notification sent for item: "${item.title}"`);
             return true;
         } else {
-            console.error('[Notifier] Telegram API returned error:', json);
+            console.error('📨 [Notifier] Telegram API returned error:', json);
             return false;
         }
     } catch (error) {
-        console.error('[Notifier] Error sending Telegram notification:', error.message);
+        console.error('📨 [Notifier] Error sending Telegram notification:', error.message);
         return false;
     }
 }

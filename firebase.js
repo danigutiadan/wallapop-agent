@@ -12,12 +12,12 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
             credential: admin.credential.cert(serviceAccount)
         });
         isFirebaseEnabled = true;
-        console.log('[Firebase] Successfully connected to Firestore.');
+        console.log('🔥 [Firebase] Successfully connected to Firestore.');
     } catch (e) {
-        console.error('[Firebase] Error parsing FIREBASE_SERVICE_ACCOUNT:', e.message);
+        console.error('🔥 [Firebase] Error parsing FIREBASE_SERVICE_ACCOUNT:', e.message);
     }
 } else {
-    console.log('[Firebase] FIREBASE_SERVICE_ACCOUNT not found in .env. Falling back to local files.');
+    console.log('🔥 [Firebase] FIREBASE_SERVICE_ACCOUNT not found in .env. Falling back to local files.');
 }
 
 function getDb() {
@@ -35,7 +35,7 @@ async function getRemoteConfig() {
             return doc.data();
         }
     } catch (e) {
-        console.error('[Firebase] Error fetching config:', e.message);
+        console.error('🔥 [Firebase] Error fetching config:', e.message);
     }
     return null;
 }
@@ -48,7 +48,7 @@ async function saveRemoteConfig(configObj) {
         await db.collection('wallapop-agent').doc('config').set(configObj);
         return true;
     } catch (e) {
-        console.error('[Firebase] Error saving config:', e.message);
+        console.error('🔥 [Firebase] Error saving config:', e.message);
         return false;
     }
 }
@@ -63,7 +63,7 @@ async function getRemoteSeenProducts() {
             return doc.data().seenProductIds || [];
         }
     } catch (e) {
-        console.error('[Firebase] Error fetching seen products:', e.message);
+        console.error('🔥 [Firebase] Error fetching seen products:', e.message);
     }
     return null;
 }
@@ -78,7 +78,7 @@ async function saveRemoteSeenProducts(seenProductIdsArray) {
         });
         return true;
     } catch (e) {
-        console.error('[Firebase] Error saving seen products:', e.message);
+        console.error('🔥 [Firebase] Error saving seen products:', e.message);
         return false;
     }
 }
