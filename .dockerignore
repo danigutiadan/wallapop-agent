@@ -1,0 +1,10 @@
+node_modules
+.env
+seen_products.json
+.wwebjs_auth
+.wwebjs_cache
+npm-debug.log
+.git
+.gitignore
+Dockerfile
+.dockerignore

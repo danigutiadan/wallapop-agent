@@ -120,6 +120,28 @@ node agent.js
 ```
 *(Nota: En la primera ejecución continua, el agente guardará todos los productos actuales en la base de datos `seen_products.json` sin notificártelos, para no saturarte de mensajes. A partir del siguiente ciclo, te notificará cada vez que aparezca un producto nuevo).*
 
+### 5. Ejecutar con Docker
+Si prefieres no instalar Node.js ni Chromium en tu máquina, puedes ejecutar el agente dentro de un contenedor Docker. 
+
+1. **Construye la imagen:**
+   ```bash
+   docker build -t wallapop-agent .
+   ```
+2. **Crea el archivo de la base de datos vacío** (solo la primera vez, para que Docker pueda montarlo correctamente):
+   ```bash
+   touch seen_products.json
+   ```
+3. **Ejecuta el contenedor** en segundo plano (montando tu `.env` y los volúmenes de datos):
+   ```bash
+   docker run -d \\
+     --name wallapop-agent \\
+     --env-file .env \\
+     -v $(pwd)/config.json:/app/config.json \\
+     -v $(pwd)/seen_products.json:/app/seen_products.json \\
+     wallapop-agent
+   ```
+*(Nota: Si usas WhatsApp, ten en cuenta que necesitarás ver la consola con `docker logs -f wallapop-agent` para escanear el QR la primera vez, y además deberías mapear el volumen `-v $(pwd)/.wwebjs_auth:/app/.wwebjs_auth` para guardar la sesión).*
+
 ---
 
 ## Estructura del Proyecto
