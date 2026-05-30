@@ -70,11 +70,15 @@ async function scrapeWallapop(searchConfig) {
     });
     
     const page = await context.newPage();
-    let items = [];
+    let itemsMap = new Map();
     let apiInterceptionTimeout = null;
+    let debounceTimer = null;
+    let resolveSearch = null;
     
     // Promise to resolve when we successfully intercept and parse the organic search response
     const searchDataPromise = new Promise((resolve) => {
+        resolveSearch = resolve;
+        
         page.on('response', async (response) => {
             const url = response.url();
             if (url.includes('api.wallapop.com/api/v3/search/section') || url.includes('/api/v3/search/section')) {
@@ -82,16 +86,20 @@ async function scrapeWallapop(searchConfig) {
                     const text = await response.text();
                     const json = JSON.parse(text);
                     
-                    // We look for organic search results
                     const sectionType = json.data?.section?.type;
                     const sectionItems = json.data?.section?.items || [];
                     
-                    // Si el tipo de sección es resultados orgánicos resolvemos.
-                    // Si no, lo ignoramos para que intercepte la respuesta buena.
+                    // Acumulamos items orgánicos
                     if (sectionType === 'organic_search_results') {
-                        console.log(`🕷️ [Scraper] Intercepted search section: type="${sectionType}", itemsCount=${sectionItems.length}`);
-                        items = sectionItems;
-                        resolve(true);
+                        console.log(`🕷️ [Scraper] Intercepted search chunk: itemsCount=${sectionItems.length}`);
+                        sectionItems.forEach(item => itemsMap.set(item.id, item));
+                        
+                        // Reiniciamos el temporizador de debounce
+                        if (debounceTimer) clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(() => {
+                            console.log(`🕷️ [Scraper] Network idle (no more chunks). Resolving with ${itemsMap.size} items.`);
+                            resolveSearch(true);
+                        }, 2500); // Esperar 2.5s desde el último chunk recibido
                     }
                 } catch (err) {
                     // Fail silently for other requests or malformed responses
@@ -118,7 +126,7 @@ async function scrapeWallapop(searchConfig) {
             } catch (e) {
                 console.log(`🕷️ [Scraper] Could not extract debug info from page: ${e.message}`);
             }
-            resolve(false);
+            resolveSearch(false);
         }, 45000); // Increased to 45 seconds for GitHub Actions runners
     });
 
@@ -137,10 +145,13 @@ async function scrapeWallapop(searchConfig) {
         if (apiInterceptionTimeout) {
             clearTimeout(apiInterceptionTimeout);
         }
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
         await browser.close();
     }
     
-    return items;
+    return Array.from(itemsMap.values());
 }
 
 module.exports = {
