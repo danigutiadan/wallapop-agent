@@ -1,7 +1,7 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 
-// Aplicar el camuflaje militar
+// Apply stealth plugin
 chromium.use(stealth);
 
 const USER_AGENTS = [
@@ -89,17 +89,17 @@ async function scrapeWallapop(searchConfig) {
                     const sectionType = json.data?.section?.type;
                     const sectionItems = json.data?.section?.items || [];
                     
-                    // Acumulamos items orgánicos
+                    // Accumulate organic items
                     if (sectionType === 'organic_search_results') {
                         console.log(`🕷️ [Scraper] Intercepted search chunk: itemsCount=${sectionItems.length}`);
                         sectionItems.forEach(item => itemsMap.set(item.id, item));
                         
-                        // Reiniciamos el temporizador de debounce
+                        // Restart the debounce timer
                         if (debounceTimer) clearTimeout(debounceTimer);
                         debounceTimer = setTimeout(() => {
                             console.log(`🕷️ [Scraper] Network idle (no more chunks). Resolving with ${itemsMap.size} items.`);
                             resolveSearch(true);
-                        }, 2500); // Esperar 2.5s desde el último chunk recibido
+                        }, 2500); // Wait 2.5s since the last chunk received
                     }
                 } catch (err) {
                     // Fail silently for other requests or malformed responses
