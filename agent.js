@@ -58,9 +58,6 @@ async function loadConfig() {
         if (process.env.TELEGRAM_CHAT_ID && config.notifications.telegram) {
             config.notifications.telegram.chat_id = process.env.TELEGRAM_CHAT_ID;
         }
-        if (process.env.WHATSAPP_CHAT_ID && config.notifications.whatsapp) {
-            config.notifications.whatsapp.chat_id = process.env.WHATSAPP_CHAT_ID;
-        }
     }
 
     return config;
@@ -167,15 +164,6 @@ async function runCheckCycle(options = {}) {
                         if (config.notifications.telegram?.enabled) {
                             await notifier.sendTelegramNotification(config.notifications.telegram, item, searchName);
                         }
-                        
-                        // Send WhatsApp Notification
-                        if (config.notifications.whatsapp?.enabled) {
-                            if (notifier.isWhatsAppReady()) {
-                                await notifier.sendWhatsAppNotification(config.notifications.whatsapp, item, searchName);
-                            } else {
-                                console.warn('[Agent] WhatsApp notification skipped because client is not authenticated/ready.');
-                            }
-                        }
                     } else {
                         console.log(`[Agent] First run / initialization: Registered existing item "${item.title}" without sending notification.`);
                     }
@@ -214,16 +202,6 @@ async function sendTestNotification() {
         console.log('[Agent] Testing Telegram...');
         await notifier.sendTelegramNotification(config.notifications.telegram, dummyItem, 'Filtro Test');
     }
-
-    if (config.notifications.whatsapp?.enabled) {
-        console.log('[Agent] Testing WhatsApp (Waiting 5s to ensure client is ready)...');
-        await new Promise(r => setTimeout(r, 5000));
-        if (notifier.isWhatsAppReady()) {
-            await notifier.sendWhatsAppNotification(config.notifications.whatsapp, dummyItem, 'Filtro Test');
-        } else {
-            console.error('[Agent] WhatsApp is not ready. Did you scan the QR code?');
-        }
-    }
 }
 
 /**
@@ -242,20 +220,6 @@ async function main() {
 
     await loadConfig();
     await loadSeenDatabase();
-    
-    // Initialize WhatsApp if enabled in config
-    if (config.notifications.whatsapp?.enabled) {
-        notifier.initWhatsApp();
-        
-        // Wait for WhatsApp to be ready if we are running once/testing
-        if (runOnce || testNotify) {
-            console.log('[Agent] Waiting up to 30s for WhatsApp authentication...');
-            for (let i = 0; i < 30; i++) {
-                if (notifier.isWhatsAppReady()) break;
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        }
-    }
     
     if (testNotify) {
         await sendTestNotification();
