@@ -127,17 +127,11 @@ Si prefieres no instalar Node.js ni Chromium en tu máquina, puedes ejecutar el 
    ```bash
    docker build -t wallapop-agent .
    ```
-2. **Crea el archivo de la base de datos vacío** (solo la primera vez, para que Docker pueda montarlo correctamente):
-   ```bash
-   touch seen_products.json
-   ```
-3. **Ejecuta el contenedor** en segundo plano (montando tu `.env` y los volúmenes de datos):
+2. **Ejecuta el contenedor** en segundo plano (pasando tu `.env` para conectar con Firebase):
    ```bash
    docker run -d \\
      --name wallapop-agent \\
      --env-file .env \\
-     -v $(pwd)/config.json:/app/config.json \\
-     -v $(pwd)/seen_products.json:/app/seen_products.json \\
      wallapop-agent
    ```
 *(Nota: Si usas WhatsApp, ten en cuenta que necesitarás ver la consola con `docker logs -f wallapop-agent` para escanear el QR la primera vez, y además deberías mapear el volumen `-v $(pwd)/.wwebjs_auth:/app/.wwebjs_auth` para guardar la sesión).*
