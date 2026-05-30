@@ -3,6 +3,7 @@ const path = require('path');
 require('dotenv').config();
 const { scrapeWallapop } = require('./scraper');
 const notifier = require('./notifier');
+const firebase = require('./firebase');
 
 // Paths
 const CONFIG_PATH = path.join(__dirname, 'config.json');
@@ -16,45 +17,83 @@ let isFirstRun = true;
 /**
  * Load configuration file.
  */
-function loadConfig() {
-    if (!fs.existsSync(CONFIG_PATH)) {
-        console.error(`[Agent] Configuration file not found at ${CONFIG_PATH}. Please create it.`);
-        process.exit(1);
-    }
-    try {
-        const fileContent = fs.readFileSync(CONFIG_PATH, 'utf-8');
-        config = JSON.parse(fileContent);
-
-        // Override with ENV variables if present
-        if (config.notifications) {
-            if (process.env.TELEGRAM_BOT_TOKEN && config.notifications.telegram) {
-                config.notifications.telegram.bot_token = process.env.TELEGRAM_BOT_TOKEN;
-            }
-            if (process.env.TELEGRAM_CHAT_ID && config.notifications.telegram) {
-                config.notifications.telegram.chat_id = process.env.TELEGRAM_CHAT_ID;
-            }
-            if (process.env.WHATSAPP_CHAT_ID && config.notifications.whatsapp) {
-                config.notifications.whatsapp.chat_id = process.env.WHATSAPP_CHAT_ID;
+async function loadConfig() {
+    if (firebase.isFirebaseEnabled()) {
+        console.log('[Agent] Attempting to load config from Firebase...');
+        const remoteConfig = await firebase.getRemoteConfig();
+        if (remoteConfig) {
+            config = remoteConfig;
+            console.log('[Agent] Loaded configuration from Firebase.');
+        } else {
+            console.log('[Agent] No config found in Firebase. Checking local file to migrate...');
+            if (fs.existsSync(CONFIG_PATH)) {
+                const fileContent = fs.readFileSync(CONFIG_PATH, 'utf-8');
+                config = JSON.parse(fileContent);
+                await firebase.saveRemoteConfig(config);
+                console.log('[Agent] Migrated local config to Firebase.');
+            } else {
+                console.error(`[Agent] Configuration file not found.`);
+                process.exit(1);
             }
         }
-
-        return config;
-    } catch (e) {
-        console.error('[Agent] Error parsing config.json:', e.message);
-        process.exit(1);
+    } else {
+        if (!fs.existsSync(CONFIG_PATH)) {
+            console.error(`[Agent] Configuration file not found at ${CONFIG_PATH}. Please create it.`);
+            process.exit(1);
+        }
+        try {
+            const fileContent = fs.readFileSync(CONFIG_PATH, 'utf-8');
+            config = JSON.parse(fileContent);
+        } catch (e) {
+            console.error('[Agent] Error parsing config.json:', e.message);
+            process.exit(1);
+        }
     }
+
+    // Override with ENV variables if present
+    if (config.notifications) {
+        if (process.env.TELEGRAM_BOT_TOKEN && config.notifications.telegram) {
+            config.notifications.telegram.bot_token = process.env.TELEGRAM_BOT_TOKEN;
+        }
+        if (process.env.TELEGRAM_CHAT_ID && config.notifications.telegram) {
+            config.notifications.telegram.chat_id = process.env.TELEGRAM_CHAT_ID;
+        }
+        if (process.env.WHATSAPP_CHAT_ID && config.notifications.whatsapp) {
+            config.notifications.whatsapp.chat_id = process.env.WHATSAPP_CHAT_ID;
+        }
+    }
+
+    return config;
 }
 
 /**
  * Load seen products database.
  */
-function loadSeenDatabase() {
+async function loadSeenDatabase() {
+    if (firebase.isFirebaseEnabled()) {
+        console.log('[Agent] Attempting to load seen products from Firebase...');
+        const remoteSeen = await firebase.getRemoteSeenProducts();
+        if (remoteSeen && remoteSeen.length > 0) {
+            seenProductIds = new Set(remoteSeen);
+            console.log(`[Agent] Loaded ${seenProductIds.size} seen product IDs from Firebase.`);
+            return;
+        } else {
+            console.log('[Agent] No seen products in Firebase, checking local migration...');
+        }
+    }
+
     if (fs.existsSync(DATABASE_PATH)) {
         try {
             const data = fs.readFileSync(DATABASE_PATH, 'utf-8');
             const list = JSON.parse(data);
             seenProductIds = new Set(list);
-            console.log(`[Agent] Loaded ${seenProductIds.size} seen product IDs from database.`);
+            console.log(`[Agent] Loaded ${seenProductIds.size} seen product IDs from local database.`);
+            
+            // Migrate to Firebase if enabled
+            if (firebase.isFirebaseEnabled()) {
+                await firebase.saveRemoteSeenProducts(list);
+                console.log('[Agent] Migrated local seen products to Firebase.');
+            }
         } catch (e) {
             console.error('[Agent] Error reading database, starting fresh seen list:', e.message);
             seenProductIds = new Set();
@@ -68,12 +107,19 @@ function loadSeenDatabase() {
 /**
  * Save seen products database.
  */
-function saveSeenDatabase() {
-    try {
-        const list = Array.from(seenProductIds);
-        fs.writeFileSync(DATABASE_PATH, JSON.stringify(list, null, 2), 'utf-8');
-    } catch (e) {
-        console.error('[Agent] Failed to write database file:', e.message);
+async function saveSeenDatabase() {
+    const list = Array.from(seenProductIds);
+    if (firebase.isFirebaseEnabled()) {
+        const ok = await firebase.saveRemoteSeenProducts(list);
+        if (!ok) {
+            console.error('[Agent] Failed to write database to Firebase.');
+        }
+    } else {
+        try {
+            fs.writeFileSync(DATABASE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+        } catch (e) {
+            console.error('[Agent] Failed to write database file:', e.message);
+        }
     }
 }
 
@@ -141,7 +187,7 @@ async function runCheckCycle(options = {}) {
     }
     
     if (dbUpdated) {
-        saveSeenDatabase();
+        await saveSeenDatabase();
         console.log(`[Agent] Saved updated seen database. Total seen items: ${seenProductIds.size}`);
     } else {
         console.log('[Agent] No new items added to database.');
@@ -194,8 +240,8 @@ async function main() {
     console.log('      WALLAPOP SEARCH AGENT & NOTIFIER   ');
     console.log('========================================');
 
-    loadConfig();
-    loadSeenDatabase();
+    await loadConfig();
+    await loadSeenDatabase();
     
     // Initialize WhatsApp if enabled in config
     if (config.notifications.whatsapp?.enabled) {
