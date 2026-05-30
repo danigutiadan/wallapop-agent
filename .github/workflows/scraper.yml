@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  schedule:
-    # Runs every 5 minutes
-    - cron: '*/5 * * * *'
   workflow_dispatch: # Allows you to run it manually from the Actions tab
 
 env:

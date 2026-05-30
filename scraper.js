@@ -1,5 +1,14 @@
 const { chromium } = require('playwright');
 
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+];
+
 /**
  * Scrapes Wallapop search results using Playwright by intercepting the internal API JSON response.
  * @param {Object} searchConfig - The search configuration.
@@ -33,14 +42,27 @@ async function scrapeWallapop(searchConfig) {
 
     console.log(`[Scraper] Navigating to: ${targetUrl}`);
     
+    // Anti-bot: Random delay between 2 and 12 seconds
+    const delayMs = Math.floor(Math.random() * 10000) + 2000;
+    const randomUserAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    console.log(`[Scraper] Anti-bot measures: Sleeping for ${delayMs}ms before launching browser...`);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    
     const browser = await chromium.launch({
         headless: true
     });
     
     const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 800 },
-        locale: 'es-ES'
+        userAgent: randomUserAgent,
+        viewport: { width: 1280 + Math.floor(Math.random() * 200), height: 800 + Math.floor(Math.random() * 100) },
+        locale: 'es-ES',
+        extraHTTPHeaders: {
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none'
+        }
     });
     
     const page = await context.newPage();
