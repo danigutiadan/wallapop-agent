@@ -75,13 +75,13 @@ async function scrapeWallapop(searchConfig) {
         apiInterceptionTimeout = setTimeout(() => {
             console.log(`[Scraper] Warning: API interception timeout reached.`);
             resolve(false);
-        }, 20000);
+        }, 45000); // Increased to 45 seconds for GitHub Actions runners
     });
 
     try {
         await page.goto(targetUrl, {
             waitUntil: 'load',
-            timeout: 30000
+            timeout: 60000
         });
         
         // Wait for search response interception
