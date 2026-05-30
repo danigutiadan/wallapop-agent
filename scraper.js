@@ -99,8 +99,24 @@ async function scrapeWallapop(searchConfig) {
         });
         
         // Safety timeout to resolve even if no API response is intercepted (so we don't hang forever)
-        apiInterceptionTimeout = setTimeout(() => {
+        apiInterceptionTimeout = setTimeout(async () => {
             console.log(`[Scraper] Warning: API interception timeout reached.`);
+            try {
+                const title = await page.title();
+                const content = await page.content();
+                console.log(`[Scraper] Page Title at timeout: "${title}"`);
+                
+                const lowerContent = content.toLowerCase();
+                if (lowerContent.includes('datadome') || lowerContent.includes('captcha') || lowerContent.includes('access denied') || title.includes('Attention Required')) {
+                    console.log(`[Scraper] 🚨 BLOCK DETECTED: Wallapop has blocked this request (Datadome / Captcha).`);
+                } else if (title === '') {
+                    console.log(`[Scraper] 🚨 BLOCK DETECTED: Page is completely blank (possible IP ban).`);
+                } else {
+                    console.log(`[Scraper] No obvious bot blocks detected in HTML. The page might be very slow or the API structure changed.`);
+                }
+            } catch (e) {
+                console.log(`[Scraper] Could not extract debug info from page: ${e.message}`);
+            }
             resolve(false);
         }, 45000); // Increased to 45 seconds for GitHub Actions runners
     });
