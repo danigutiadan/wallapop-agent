@@ -1,6 +1,9 @@
 name: Wallapop Scraper Bot
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     # Runs every 5 minutes
     - cron: '*/5 * * * *'
