@@ -86,8 +86,9 @@ async function scrapeWallapop(searchConfig) {
                     const sectionType = json.data?.section?.type;
                     const sectionItems = json.data?.section?.items || [];
                     
-                    // Si el tipo de sección es resultados orgánicos o está vacío (0 resultados), resolvemos
-                    if (sectionType === 'organic_search_results' || sectionItems.length >= 0) {
+                    // Si el tipo de sección es resultados orgánicos resolvemos.
+                    // Si no, lo ignoramos para que intercepte la respuesta buena.
+                    if (sectionType === 'organic_search_results') {
                         console.log(`🕷️ [Scraper] Intercepted search section: type="${sectionType}", itemsCount=${sectionItems.length}`);
                         items = sectionItems;
                         resolve(true);
