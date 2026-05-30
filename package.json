@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "run": "node agent.js",
+    "start": "node agent.js",
+    "scrape": "node agent.js --run-once",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.4.2",
+    "firebase-admin": "^13.10.0",
     "playwright": "^1.60.0",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.34.7"
