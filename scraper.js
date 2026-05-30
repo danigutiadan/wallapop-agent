@@ -131,10 +131,16 @@ async function scrapeWallapop(searchConfig) {
     });
 
     try {
-        await page.goto(targetUrl, {
+        const response = await page.goto(targetUrl, {
             waitUntil: 'load',
             timeout: 60000
         });
+        
+        const title = await page.title();
+        if (response && response.status() === 403 || title.includes('ERROR: The request could not be satisfied')) {
+            console.log(`🕷️ [Scraper] 🚨 FAST FAIL: Bot block detected (403 Forbidden or CloudFront). Aborting wait.`);
+            resolveSearch(false);
+        }
         
         // Wait for search response interception
         await searchDataPromise;
