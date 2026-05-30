@@ -124,20 +124,37 @@ async function sendTelegramNotification(telegramConfig, item, searchName) {
                  `<b>Descripción:</b>\n<i>${cleanDesc}</i>\n\n` +
                  `🔗 <a href="${itemUrl}">Ver producto en Wallapop</a>`;
 
-    const telegramUrl = `https://api.telegram.org/bot${telegramConfig.bot_token}/sendMessage`;
+    const imageUrl = item.images && item.images.length > 0 ? (item.images[0].urls?.big || item.images[0].urls?.medium) : null;
+
+    let apiUrl, requestBody;
+    
+    if (imageUrl) {
+        // Send as Photo with caption
+        apiUrl = `https://api.telegram.org/bot${telegramConfig.bot_token}/sendPhoto`;
+        requestBody = {
+            chat_id: telegramConfig.chat_id,
+            photo: imageUrl,
+            caption: text,
+            parse_mode: 'HTML'
+        };
+    } else {
+        // Fallback to text message
+        apiUrl = `https://api.telegram.org/bot${telegramConfig.bot_token}/sendMessage`;
+        requestBody = {
+            chat_id: telegramConfig.chat_id,
+            text: text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: false
+        };
+    }
 
     try {
-        const response = await fetch(telegramUrl, {
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                chat_id: telegramConfig.chat_id,
-                text: text,
-                parse_mode: 'HTML',
-                disable_web_page_preview: false
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const json = await response.json();
@@ -189,8 +206,24 @@ async function sendWhatsAppNotification(whatsappConfig, item, searchName) {
         formattedChatId = `${cleaned}@c.us`;
     }
 
+    const { MessageMedia } = require('whatsapp-web.js');
+    let media = null;
+    const imageUrl = item.images && item.images.length > 0 ? (item.images[0].urls?.big || item.images[0].urls?.medium) : null;
+    
+    if (imageUrl) {
+        try {
+            media = await MessageMedia.fromUrl(imageUrl);
+        } catch (e) {
+            console.error('[Notifier] Failed to load image for WhatsApp:', e.message);
+        }
+    }
+
     try {
-        await whatsappClient.sendMessage(formattedChatId, text);
+        if (media) {
+            await whatsappClient.sendMessage(formattedChatId, media, { caption: text });
+        } else {
+            await whatsappClient.sendMessage(formattedChatId, text);
+        }
         console.log(`[Notifier] WhatsApp notification sent to ${formattedChatId} for item: "${item.title}"`);
         return true;
     } catch (error) {
