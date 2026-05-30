@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+.env
+seen_products.json
+.wwebjs_auth/
+.wwebjs_cache/
