@@ -22,7 +22,7 @@ class PlaywrightScraper {
         if (searchConfig.keywords) params.push(`keywords=${encodeURIComponent(searchConfig.keywords)}`);
         if (searchConfig.min_price !== undefined) params.push(`min_sale_price=${searchConfig.min_price}`);
         if (searchConfig.max_price !== undefined) params.push(`max_sale_price=${searchConfig.max_price}`);
-        if (searchConfig.order_by) params.push(`order_by=${searchConfig.order_by}`);
+        params.push(`order_by=${searchConfig.order_by || 'newest'}`);
         if (searchConfig.latitude !== undefined) params.push(`latitude=${searchConfig.latitude}`);
         if (searchConfig.longitude !== undefined) params.push(`longitude=${searchConfig.longitude}`);
         if (searchConfig.distance_in_km !== undefined) params.push(`distance_in_km=${searchConfig.distance_in_km}`);
