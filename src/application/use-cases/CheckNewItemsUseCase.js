@@ -51,10 +51,26 @@ class CheckNewItemsUseCase {
     console.log(`🤖 [Agent] Loaded ${this.seenProductIds.size} seen product IDs.`);
   }
 
+  async reloadConfig() {
+    if (this.database.isFirebaseEnabled()) {
+      const fbConfig = await this.database.getConfig();
+      if (fbConfig) {
+        this.config = fbConfig;
+      }
+    } else {
+      const localConfig = await this.localDatabase.getConfig();
+      if (localConfig) {
+        this.config = localConfig;
+      }
+    }
+  }
+
   async run(options = {}) {
     const { dryRun = false } = options;
     console.log(`\n🤖 [Agent] Starting check cycle at ${new Date().toLocaleString()}...`);
     
+    await this.reloadConfig();
+
     let dbUpdated = false;
 
     if (!this.config || !this.config.searches) {
@@ -64,6 +80,10 @@ class CheckNewItemsUseCase {
 
     for (const search of this.config.searches) {
       const searchName = search.name || search.keywords || 'Sin nombre';
+      if (search.enabled === false) {
+        console.log(`🤖 [Agent] Skipping disabled search "${searchName}".`);
+        continue;
+      }
       console.log(`🤖 [Agent] Running search for "${searchName}"...`);
       
       try {
