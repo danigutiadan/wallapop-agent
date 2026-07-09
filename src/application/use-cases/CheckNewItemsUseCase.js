@@ -95,12 +95,65 @@ class CheckNewItemsUseCase {
         
         if (newItems.length > 0) {
           const shouldNotify = !this.isFirstRun || this.seenProductIds.size > 0;
+          const minReviews = search.min_reviews !== undefined && search.min_reviews !== null && search.min_reviews !== ''
+            ? Number(search.min_reviews)
+            : (search.min_seller_reviews !== undefined && search.min_seller_reviews !== null && search.min_seller_reviews !== ''
+                ? Number(search.min_seller_reviews)
+                : null);
+          const minRating = search.min_seller_rating !== undefined && search.min_seller_rating !== null && search.min_seller_rating !== ''
+            ? Number(search.min_seller_rating)
+            : null;
+          const hasMinReviews = minReviews !== null && !isNaN(minReviews);
+          const hasMinRating = minRating !== null && !isNaN(minRating);
           
           for (const item of newItems) {
             this.seenProductIds.add(item.id);
             dbUpdated = true;
 
             if (shouldNotify) {
+              if (hasMinReviews || hasMinRating) {
+                const stats = await this.scraper.getSellerStats(item.userId);
+                item.sellerStats = stats;
+
+                let sellerReviews = null;
+                let sellerRating = null;
+
+                if (stats) {
+                  const counters = Array.isArray(stats.counters) ? stats.counters : (Array.isArray(stats.data?.counters) ? stats.data.counters : []);
+                  const reviewsCounter = counters.find(c => c && c.type === 'reviews');
+                  if (reviewsCounter && reviewsCounter.value !== undefined) {
+                    sellerReviews = Number(reviewsCounter.value);
+                  } else if (stats.reviews_count !== undefined) {
+                    sellerReviews = Number(stats.reviews_count);
+                  } else if (stats.data?.reviews_count !== undefined) {
+                    sellerReviews = Number(stats.data.reviews_count);
+                  }
+
+                  const ratingCounter = counters.find(c => c && (c.type === 'rating' || c.type === 'scoring'));
+                  if (ratingCounter && ratingCounter.value !== undefined) {
+                    sellerRating = Number(ratingCounter.value);
+                  } else if (stats.rating !== undefined) {
+                    sellerRating = Number(stats.rating);
+                  } else if (stats.scoring !== undefined) {
+                    sellerRating = Number(stats.scoring);
+                  } else if (stats.data?.rating !== undefined) {
+                    sellerRating = Number(stats.data.rating);
+                  }
+                }
+
+                if (hasMinReviews && (sellerReviews === null || isNaN(sellerReviews) || sellerReviews < minReviews)) {
+                  const reviewsText = sellerReviews !== null && !isNaN(sellerReviews) ? sellerReviews : 0;
+                  console.log(`🤖 [Agent] ❌ Ítem descartado "${item.title}": Vendedor con ${reviewsText} valoraciones (mínimo requerido: ${minReviews})`);
+                  continue;
+                }
+
+                if (hasMinRating && (sellerRating === null || isNaN(sellerRating) || sellerRating < minRating)) {
+                  const ratingText = sellerRating !== null && !isNaN(sellerRating) ? sellerRating : 'sin valoración';
+                  console.log(`🤖 [Agent] ❌ Ítem descartado "${item.title}": Vendedor con rating ${ratingText} (mínimo requerido: ${minRating})`);
+                  continue;
+                }
+              }
+
               console.log(`🤖 [Agent] New Listing detected! Sending alerts for "${item.title}"`);
               
               if (dryRun) {
@@ -119,6 +172,10 @@ class CheckNewItemsUseCase {
       } catch (error) {
         console.error(`🤖 [Agent] Error executing search "${searchName}":`, error.message);
       }
+    }
+
+    if (this.scraper && typeof this.scraper.close === 'function') {
+      await this.scraper.close();
     }
     
     if (dbUpdated) {

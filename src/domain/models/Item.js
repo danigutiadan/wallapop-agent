@@ -8,6 +8,11 @@ class Item {
     this.web_slug = web_slug;
     this.images = images || [];
     this.originalData = originalData || {};
+    this.sellerStats = null;
+  }
+
+  get userId() {
+    return this.originalData ? this.originalData.user_id : null;
   }
 
   get url() {

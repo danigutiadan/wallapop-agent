@@ -12,7 +12,20 @@ const USER_AGENTS = [
 ];
 
 class PlaywrightScraper {
+  constructor() {
+    this.sellerStatsCache = new Map();
+    this.browser = null;
+    this.page = null;
+  }
+
   async scrape(searchConfig) {
+    this.sellerStatsCache = new Map();
+    if (this.browser) {
+      try { await this.browser.close(); } catch (e) {}
+      this.browser = null;
+      this.page = null;
+    }
+
     let targetUrl = '';
     
     if (searchConfig.url) {
@@ -49,6 +62,7 @@ class PlaywrightScraper {
     await new Promise(resolve => setTimeout(resolve, delayMs));
     
     const browser = await chromium.launch({ headless: true });
+    this.browser = browser;
     const context = await browser.newContext({
         userAgent: randomUserAgent,
         viewport: { width: 1280 + Math.floor(Math.random() * 200), height: 800 + Math.floor(Math.random() * 100) },
@@ -63,6 +77,7 @@ class PlaywrightScraper {
     });
     
     const page = await context.newPage();
+    this.page = page;
     let itemsMap = new Map();
     let apiInterceptionTimeout = null;
     let debounceTimer = null;
@@ -124,10 +139,40 @@ class PlaywrightScraper {
     } finally {
         if (apiInterceptionTimeout) clearTimeout(apiInterceptionTimeout);
         if (debounceTimer) clearTimeout(debounceTimer);
-        await browser.close();
     }
     
     return Array.from(itemsMap.values());
+  }
+
+  async getSellerStats(userId) {
+    if (!userId) return null;
+    if (this.sellerStatsCache.has(userId)) {
+      return this.sellerStatsCache.get(userId);
+    }
+    if (!this.page || !this.page.context()) {
+      return null;
+    }
+    try {
+      const url = `https://api.wallapop.com/api/v3/users/${userId}/stats`;
+      const response = await this.page.context().request.get(url);
+      if (response && response.ok()) {
+        const stats = await response.json();
+        this.sellerStatsCache.set(userId, stats);
+        return stats;
+      }
+    } catch (error) {
+      console.error(`🕷️ [Scraper] Error fetching stats for user ${userId}:`, error.message);
+    }
+    this.sellerStatsCache.set(userId, null);
+    return null;
+  }
+
+  async close() {
+    if (this.browser) {
+      try { await this.browser.close(); } catch (e) {}
+      this.browser = null;
+      this.page = null;
+    }
   }
 }
 
