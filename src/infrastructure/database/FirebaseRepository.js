@@ -10,8 +10,22 @@ class FirebaseRepository {
   init() {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       try {
-        const buff = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64');
-        const serviceAccount = JSON.parse(buff.toString('utf-8'));
+        let serviceAccount;
+        const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+        const fs = require('fs');
+
+        if (fs.existsSync(raw)) {
+          serviceAccount = JSON.parse(fs.readFileSync(raw, 'utf-8'));
+        } else if (raw.startsWith('{')) {
+          serviceAccount = JSON.parse(raw);
+        } else {
+          try {
+            const buff = Buffer.from(raw, 'base64');
+            serviceAccount = JSON.parse(buff.toString('utf-8'));
+          } catch {
+            serviceAccount = JSON.parse(raw);
+          }
+        }
         
         // Prevent re-initialization if already initialized
         if (!admin.apps.length) {
