@@ -48,6 +48,80 @@ class FirebaseRepository {
     return this.enabled;
   }
 
+  async getAllUsers() {
+    if (!this.db) return [];
+    try {
+      const snapshot = await this.db.collection('users').get();
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+      console.error('🔥 [Firebase] Error fetching all users:', e.message);
+      return [];
+    }
+  }
+
+  async getUser(userId) {
+    if (!this.db || !userId) return null;
+    try {
+      const doc = await this.db.collection('users').doc(userId).get();
+      if (doc.exists) {
+        return { id: doc.id, ...doc.data() };
+      }
+    } catch (e) {
+      console.error(`🔥 [Firebase] Error fetching user ${userId}:`, e.message);
+    }
+    return null;
+  }
+
+  async saveUser(userId, data) {
+    if (!this.db || !userId) return false;
+    try {
+      await this.db.collection('users').doc(userId).set(data, { merge: true });
+      return true;
+    } catch (e) {
+      console.error(`🔥 [Firebase] Error saving user ${userId}:`, e.message);
+      return false;
+    }
+  }
+
+  async getUserSeenProducts(userId) {
+    if (!this.db || !userId) return [];
+    try {
+      const doc = await this.db.collection('users').doc(userId).collection('state').doc('seen').get();
+      const seen = doc.exists ? (doc.data()?.seenProductIds || []) : [];
+      if (seen.length === 0 && userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
+        const legacySeen = await this.getSeenProducts();
+        if (legacySeen && legacySeen.length > 0) {
+          return legacySeen;
+        }
+      }
+      return seen;
+    } catch (e) {
+      console.error(`🔥 [Firebase] Error fetching seen products for user ${userId}:`, e.message);
+      if (userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
+        return (await this.getSeenProducts()) || [];
+      }
+      return [];
+    }
+  }
+
+  async saveUserSeenProducts(userId, seenProductIdsArray) {
+    if (!this.db || !userId) return false;
+    try {
+      await this.db.collection('users').doc(userId).collection('state').doc('seen').set({
+        seenProductIds: seenProductIdsArray,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      if (userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
+        await this.saveSeenProducts(seenProductIdsArray);
+      }
+      return true;
+    } catch (e) {
+      console.error(`🔥 [Firebase] Error saving seen products for user ${userId}:`, e.message);
+      return false;
+    }
+  }
+
   async getConfig() {
     if (!this.db) return null;
     try {

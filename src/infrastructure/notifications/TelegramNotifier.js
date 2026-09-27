@@ -1,7 +1,7 @@
 class TelegramNotifier {
-  constructor() {
-    this.botToken = process.env.TELEGRAM_BOT_TOKEN;
-    this.chatId = process.env.TELEGRAM_CHAT_ID;
+  constructor(botToken = null, chatId = null) {
+    this.botToken = botToken || process.env.TELEGRAM_BOT_TOKEN;
+    this.chatId = chatId || process.env.TELEGRAM_CHAT_ID;
   }
 
   isConfigured() {
