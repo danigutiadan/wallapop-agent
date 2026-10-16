@@ -87,19 +87,9 @@ class FirebaseRepository {
     if (!this.db || !userId) return [];
     try {
       const doc = await this.db.collection('users').doc(userId).collection('state').doc('seen').get();
-      const seen = doc.exists ? (doc.data()?.seenProductIds || []) : [];
-      if (seen.length === 0 && userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
-        const legacySeen = await this.getSeenProducts();
-        if (legacySeen && legacySeen.length > 0) {
-          return legacySeen;
-        }
-      }
-      return seen;
+      return doc.exists ? (doc.data()?.seenProductIds || []) : [];
     } catch (e) {
       console.error(`🔥 [Firebase] Error fetching seen products for user ${userId}:`, e.message);
-      if (userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
-        return (await this.getSeenProducts()) || [];
-      }
       return [];
     }
   }
@@ -111,10 +101,6 @@ class FirebaseRepository {
         seenProductIds: seenProductIdsArray,
         updatedAt: new Date().toISOString()
       }, { merge: true });
-
-      if (userId === 'CoZSISpMSdMZZCUUlud7nmo7kS12') {
-        await this.saveSeenProducts(seenProductIdsArray);
-      }
       return true;
     } catch (e) {
       console.error(`🔥 [Firebase] Error saving seen products for user ${userId}:`, e.message);

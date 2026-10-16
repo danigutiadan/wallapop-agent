@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const PlaywrightScraper = require('./infrastructure/scraper/PlaywrightScraper');
+const MultiProviderScraper = require('./infrastructure/scraper/MultiProviderScraper');
 const FirebaseRepository = require('./infrastructure/database/FirebaseRepository');
 const LocalFileRepository = require('./infrastructure/database/LocalFileRepository');
 const TelegramNotifier = require('./infrastructure/notifications/TelegramNotifier');
@@ -13,11 +13,11 @@ async function main() {
   const testNotify = args.includes('--test-notify');
 
   console.log('========================================');
-  console.log('   WALLAPOP SEARCH AGENT (DDD/CLEAN)    ');
+  console.log(' WALLAPOP & VINTED SEARCH AGENT (CLEAN) ');
   console.log('========================================');
 
   // 1. Initialize Infrastructure (Adapters)
-  const scraper = new PlaywrightScraper();
+  const scraper = new MultiProviderScraper();
   const database = new FirebaseRepository();
   const localDatabase = new LocalFileRepository();
   const notifier = new TelegramNotifier();

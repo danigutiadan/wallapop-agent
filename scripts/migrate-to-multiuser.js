@@ -15,25 +15,36 @@ async function migrate() {
 
   const db = repo.db;
 
-  // 1. Find or verify target user
-  let targetUid = 'CoZSISpMSdMZZCUUlud7nmo7kS12';
-  let targetEmail = 'danigutiadan4@gmail.com';
+  // 1. Find or verify target user from CLI arguments or environment variables
+  const args = process.argv.slice(2);
+  const uidIndex = args.indexOf('--uid');
+  const emailIndex = args.indexOf('--email');
+  const inputUid = (uidIndex !== -1 ? args[uidIndex + 1] : null) || process.env.TARGET_UID;
+  const inputEmail = (emailIndex !== -1 ? args[emailIndex + 1] : null) || process.env.TARGET_EMAIL;
+
+  if (!inputUid && !inputEmail) {
+    console.error('❌ Please specify a target user via --uid <uid> or --email <email> (or TARGET_UID / TARGET_EMAIL env vars).');
+    process.exit(1);
+  }
+
+  let targetUid = null;
+  let targetEmail = null;
 
   try {
-    const listUsers = await admin.auth().listUsers();
-    console.log(`ℹ️ Found ${listUsers.users.length} user(s) in Firebase Auth.`);
-    const existing = listUsers.users.find(u => u.uid === targetUid || u.email === targetEmail);
-    if (existing) {
-      targetUid = existing.uid;
-      targetEmail = existing.email;
-      console.log(`✅ Target user confirmed: ${targetEmail} (UID: ${targetUid})`);
-    } else if (listUsers.users.length > 0) {
-      targetUid = listUsers.users[0].uid;
-      targetEmail = listUsers.users[0].email;
-      console.log(`ℹ️ Using first user found: ${targetEmail} (UID: ${targetUid})`);
+    if (inputUid) {
+      const userRecord = await admin.auth().getUser(inputUid);
+      targetUid = userRecord.uid;
+      targetEmail = userRecord.email;
+    } else {
+      const userRecord = await admin.auth().getUserByEmail(inputEmail);
+      targetUid = userRecord.uid;
+      targetEmail = userRecord.email;
     }
+    console.log(`✅ Target user confirmed: ${targetEmail} (UID: ${targetUid})`);
   } catch (err) {
-    console.warn('⚠️ Could not list Auth users, using default UID:', err.message);
+    console.error(`❌ Target user not found in Firebase Auth: ${err.message}`);
+    console.error('❌ Migration aborted. No fallback user will be used.');
+    process.exit(1);
   }
 
   // 2. Read legacy config
@@ -58,9 +69,11 @@ async function migrate() {
     console.warn('⚠️ Legacy state not found, default to empty array.');
   }
 
-  // 4. Telegram credentials from .env
-  const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '';
-  const telegramChatId = process.env.TELEGRAM_CHAT_ID || '';
+  // 4. Telegram credentials from CLI arguments (optional)
+  const botTokenIndex = args.indexOf('--telegram-token');
+  const chatIdIndex = args.indexOf('--telegram-chat-id');
+  const telegramBotToken = (botTokenIndex !== -1 ? args[botTokenIndex + 1] : '') || '';
+  const telegramChatId = (chatIdIndex !== -1 ? args[chatIdIndex + 1] : '') || '';
   const telegramEnabled = legacyConfig.notifications?.telegram?.enabled !== false;
   console.log(`ℹ️ Telegram config: token=${telegramBotToken ? '***' + telegramBotToken.slice(-5) : 'none'}, chatId=${telegramChatId || 'none'}, enabled=${telegramEnabled}`);
 

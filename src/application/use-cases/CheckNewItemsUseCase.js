@@ -53,7 +53,9 @@ class CheckNewItemsUseCase {
       max_price: search.max_price,
       order_by: search.order_by || 'newest',
       condition: search.condition,
+      category_id: search.category_id,
       category_ids: search.category_ids,
+      subcategory_ids: search.subcategory_ids,
       object_type_id: search.object_type_id,
       latitude: search.latitude,
       longitude: search.longitude,
@@ -108,11 +110,10 @@ class CheckNewItemsUseCase {
     if (this.database.isFirebaseEnabled()) {
       const users = await this.database.getAllUsers();
       if (users.length === 0) {
-        console.log('🤖 [Agent] No users found in Firebase. Falling back to legacy single-user mode.');
-        await this.runLegacy(options);
-      } else {
-        await this.runMultiUser(users, options);
+        console.log('🤖 [Agent] No users found in Firebase.');
+        return;
       }
+      await this.runMultiUser(users, options);
     } else {
       await this.runLegacy(options);
     }
@@ -138,8 +139,8 @@ class CheckNewItemsUseCase {
         console.log(`\n🤖 [Agent] User ${userEmail} (${user.id}): ${enabledSearches.length} enabled search(es).`);
 
         // Extract telegram config
-        const botToken = user.telegram?.bot_token || user.telegram?.botToken || (user.id === 'CoZSISpMSdMZZCUUlud7nmo7kS12' ? process.env.TELEGRAM_BOT_TOKEN : null);
-        const chatId = user.telegram?.chat_id || user.telegram?.chatId || (user.id === 'CoZSISpMSdMZZCUUlud7nmo7kS12' ? process.env.TELEGRAM_CHAT_ID : null);
+        const botToken = user.telegram?.bot_token || user.telegram?.botToken || null;
+        const chatId = user.telegram?.chat_id || user.telegram?.chatId || null;
         const telegramEnabled = user.telegram?.enabled !== false;
         const notifier = new TelegramNotifier(botToken, chatId);
 
@@ -163,7 +164,7 @@ class CheckNewItemsUseCase {
             } else {
               items = await this.scraper.scrape(search);
               scrapeCache.set(cacheKey, items);
-              console.log(`🤖 [Agent] Found ${items.length} total items on page.`);
+              console.log(`🤖 [Agent] Found ${items.length} total items across providers.`);
             }
 
             const newItems = items.filter(item => !seenSet.has(item.id));
@@ -184,11 +185,17 @@ class CheckNewItemsUseCase {
               for (const item of newItems) {
                 if (hasMinReviews || hasMinRating) {
                   if (!item.sellerStats) {
-                    item.sellerStats = await this.scraper.getSellerStats(item.userId);
+                    item.sellerStats = await this.scraper.getSellerStats(item.userId, item.provider);
+                  }
+                  if (item.sellerStats && item.provider === 'vinted' && (item.sellerStats.city || item.sellerStats.country)) {
+                    item.location = {
+                      city: item.sellerStats.city || 'Vinted',
+                      region2: item.sellerStats.country || 'Europa'
+                    };
                   }
                   const evalResult = this.evaluateSellerStats(item.sellerStats, minReviews, minRating);
                   if (!evalResult.pass) {
-                    console.log(`🤖 [Agent] ❌ Ítem descartado "${item.title}": ${evalResult.reason}`);
+                    console.log(`🤖 [Agent] ❌ Ítem descartado [${item.providerName}] "${item.title}": ${evalResult.reason}`);
                     continue;
                   }
                 }
@@ -197,9 +204,9 @@ class CheckNewItemsUseCase {
                 userDbUpdated = true;
 
                 if (dryRun) {
-                  console.log(`🤖 [Agent] [DRY RUN] Would notify: "${item.title}"`);
+                  console.log(`🤖 [Agent] [DRY RUN] Would notify [${item.providerName}]: "${item.title}"`);
                 } else if (telegramEnabled && notifier.isConfigured()) {
-                  console.log(`🤖 [Agent] New Listing detected! Sending alerts for "${item.title}"`);
+                  console.log(`🤖 [Agent] New Listing detected on ${item.providerName}! Sending alerts for "${item.title}"`);
                   await notifier.sendNotification(item, searchName);
                 }
               }
@@ -247,7 +254,7 @@ class CheckNewItemsUseCase {
         
         try {
           const items = await this.scraper.scrape(search);
-          console.log(`🤖 [Agent] Found ${items.length} total items on page.`);
+          console.log(`🤖 [Agent] Found ${items.length} total items across providers.`);
           
           const newItems = items.filter(item => !this.seenProductIds.has(item.id));
           console.log(`🤖 [Agent] ${newItems.length} items are new.`);
@@ -272,19 +279,25 @@ class CheckNewItemsUseCase {
               if (shouldNotify) {
                 if (hasMinReviews || hasMinRating) {
                   if (!item.sellerStats) {
-                    item.sellerStats = await this.scraper.getSellerStats(item.userId);
+                    item.sellerStats = await this.scraper.getSellerStats(item.userId, item.provider);
+                  }
+                  if (item.sellerStats && item.provider === 'vinted' && (item.sellerStats.city || item.sellerStats.country)) {
+                    item.location = {
+                      city: item.sellerStats.city || 'Vinted',
+                      region2: item.sellerStats.country || 'Europa'
+                    };
                   }
                   const evalResult = this.evaluateSellerStats(item.sellerStats, minReviews, minRating);
                   if (!evalResult.pass) {
-                    console.log(`🤖 [Agent] ❌ Ítem descartado "${item.title}": ${evalResult.reason}`);
+                    console.log(`🤖 [Agent] ❌ Ítem descartado [${item.providerName}] "${item.title}": ${evalResult.reason}`);
                     continue;
                   }
                 }
 
-                console.log(`🤖 [Agent] New Listing detected! Sending alerts for "${item.title}"`);
+                console.log(`🤖 [Agent] New Listing detected on ${item.providerName}! Sending alerts for "${item.title}"`);
                 
                 if (dryRun) {
-                  console.log(`🤖 [Agent] [DRY RUN] Would notify: "${item.title}"`);
+                  console.log(`🤖 [Agent] [DRY RUN] Would notify [${item.providerName}]: "${item.title}"`);
                   continue;
                 }
                 
@@ -292,7 +305,7 @@ class CheckNewItemsUseCase {
                   await this.notifier.sendNotification(item, searchName);
                 }
               } else {
-                console.log(`🤖 [Agent] First run: Registered existing item "${item.title}" silently.`);
+                console.log(`🤖 [Agent] First run: Registered existing item [${item.providerName}] "${item.title}" silently.`);
               }
             }
           }
@@ -334,7 +347,7 @@ class CheckNewItemsUseCase {
     if (this.database.isFirebaseEnabled()) {
       const users = await this.database.getAllUsers();
       const targetUsers = users.filter(user => {
-        const hasTelegram = user.id === 'CoZSISpMSdMZZCUUlud7nmo7kS12' || !!(user.telegram?.chat_id || user.telegram?.chatId);
+        const hasTelegram = !!(user.telegram?.chat_id || user.telegram?.chatId) && !!(user.telegram?.bot_token || user.telegram?.botToken);
         const enabled = user.telegram?.enabled !== false;
         return hasTelegram && enabled;
       });
@@ -345,8 +358,8 @@ class CheckNewItemsUseCase {
       }
 
       for (const user of targetUsers) {
-        const botToken = user.telegram?.bot_token || user.telegram?.botToken || (user.id === 'CoZSISpMSdMZZCUUlud7nmo7kS12' ? process.env.TELEGRAM_BOT_TOKEN : null);
-        const chatId = user.telegram?.chat_id || user.telegram?.chatId || (user.id === 'CoZSISpMSdMZZCUUlud7nmo7kS12' ? process.env.TELEGRAM_CHAT_ID : null);
+        const botToken = user.telegram?.bot_token || user.telegram?.botToken || null;
+        const chatId = user.telegram?.chat_id || user.telegram?.chatId || null;
         const notifier = new TelegramNotifier(botToken, chatId);
         if (notifier.isConfigured()) {
           console.log(`🤖 [Agent] Sending test notification to user ${user.email || user.id}...`);

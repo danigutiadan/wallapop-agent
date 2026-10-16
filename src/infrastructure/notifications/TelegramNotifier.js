@@ -1,7 +1,7 @@
 class TelegramNotifier {
   constructor(botToken = null, chatId = null) {
-    this.botToken = botToken || process.env.TELEGRAM_BOT_TOKEN;
-    this.chatId = chatId || process.env.TELEGRAM_CHAT_ID;
+    this.botToken = botToken;
+    this.chatId = chatId;
   }
 
   isConfigured() {
@@ -24,18 +24,25 @@ class TelegramNotifier {
     }
 
     const priceText = item.priceString;
-    const locationText = item.location ? `${item.location.city} (${item.location.region2 || item.location.region})` : 'No disponible';
+    const locationText = item.location
+      ? (item.location.region2 || item.location.region
+          ? `${item.location.city} (${item.location.region2 || item.location.region})`
+          : `${item.location.city}`)
+      : 'No disponible';
     const cleanDesc = this.formatDescription(item.description, 250);
+    const providerName = item.providerName || (item.provider === 'vinted' ? 'Vinted' : 'Wallapop');
 
-    const text = `<b>🔔 ¡Nuevo producto en Wallapop!</b>\n` +
+    const text = `<b>🔔 ¡Nuevo producto en ${providerName}!</b>\n` +
                  `<b>Filtro:</b> ${searchName}\n\n` +
                  `<b>Título:</b> ${item.title}\n` +
                  `<b>Precio:</b> ${priceText}\n` +
                  `<b>Ubicación:</b> ${locationText}\n\n` +
                  `<b>Descripción:</b>\n<i>${cleanDesc}</i>\n\n` +
-                 `🔗 <a href="${item.url}">Ver producto en Wallapop</a>`;
+                 `🔗 <a href="${item.url}">Ver producto en ${providerName}</a>`;
 
-    const imageUrl = item.images && item.images.length > 0 ? (item.images[0].urls?.big || item.images[0].urls?.medium) : null;
+    const imageUrl = item.images && item.images.length > 0
+      ? (item.images[0].urls?.big || item.images[0].urls?.medium || item.images[0].url || null)
+      : null;
 
     let apiUrl, requestBody;
     

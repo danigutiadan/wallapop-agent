@@ -29,6 +29,9 @@ class PlaywrightScraper {
     let targetUrl = '';
     
     if (searchConfig.url) {
+        if (searchConfig.url.includes('vinted.')) {
+            return [];
+        }
         targetUrl = searchConfig.url;
     } else {
         const params = [];
@@ -100,6 +103,7 @@ class PlaywrightScraper {
                         sectionItems.forEach(rawItem => {
                             itemsMap.set(rawItem.id, new Item({
                               id: rawItem.id,
+                              provider: 'wallapop',
                               title: rawItem.title,
                               description: rawItem.description,
                               price: rawItem.price,
