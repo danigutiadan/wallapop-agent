@@ -213,6 +213,106 @@ class VintedPlaywrightScraper {
     return { unsupported: false, catalogIds, extraKeyword };
   }
 
+  normalizeText(str) {
+    return String(str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  }
+
+  escapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  parseSearchKeywords(rawKeywords) {
+    const requiredPhrases = [];
+    const requiredWords = [];
+    const excludedTerms = [];
+    const positiveSearchParts = [];
+
+    if (!rawKeywords || !String(rawKeywords).trim()) {
+      return { requiredPhrases, requiredWords, excludedTerms, cleanSearchText: '' };
+    }
+
+    // Normalizar comillas tipográficas (“ ”, « », etc.) a comillas dobles estándar (")
+    const normalizedQuotes = String(rawKeywords)
+      .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036\u00AB\u00BB“”„«»]/g, '"')
+      .trim();
+
+    const tokenRegex = /(-?\s*"[^"]+")|(\S+)/g;
+    let match;
+    while ((match = tokenRegex.exec(normalizedQuotes)) !== null) {
+      const quotedToken = match[1];
+      const plainToken = match[2];
+
+      if (quotedToken) {
+        const trimmed = quotedToken.trim();
+        const isNegated = trimmed.startsWith('-');
+        const inner = trimmed.replace(/^-?\s*"/, '').replace(/"$/, '').trim();
+        if (!inner) continue;
+
+        if (isNegated) {
+          excludedTerms.push(inner);
+        } else if (inner.startsWith('-') && inner.length > 1) {
+          excludedTerms.push(inner.slice(1).trim());
+        } else {
+          requiredPhrases.push(inner);
+          positiveSearchParts.push(inner);
+        }
+      } else if (plainToken) {
+        const cleaned = plainToken.replace(/^"+|"+$/g, '').trim();
+        if (!cleaned || cleaned === '-') continue;
+
+        if (cleaned.startsWith('-') && cleaned.length > 1) {
+          const excl = cleaned.slice(1).replace(/^"+|"+$/g, '').trim();
+          if (excl) excludedTerms.push(excl);
+        } else {
+          requiredWords.push(cleaned);
+          positiveSearchParts.push(cleaned);
+        }
+      }
+    }
+
+    return {
+      requiredPhrases,
+      requiredWords,
+      excludedTerms,
+      cleanSearchText: positiveSearchParts.join(' ').replace(/\s+/g, ' ').trim()
+    };
+  }
+
+  buildTermRegex(rawTerm) {
+    const norm = this.normalizeText(rawTerm).trim();
+    if (!norm) return null;
+
+    const words = norm.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return null;
+
+    const wordPatterns = words.map(word => {
+      if (word.includes('-')) {
+        const subParts = word.split('-').filter(Boolean).map(p => this.escapeRegex(p));
+        return subParts.join('[\\s\\-_/.]*');
+      }
+      return this.escapeRegex(word);
+    });
+
+    const corePattern = wordPatterns.join('[\\s\\-_/,.:;|+]+');
+    const lastWord = words[words.length - 1];
+    const isLastWordNumeric = /^\d+$/.test(lastWord);
+
+    const endBoundary = isLastWordNumeric
+      ? '(?:gb|tb|mb|go|to|kb|p|pulgadas|pouces|inch|inches|cm|mm|m|hz|khz|mhz|ghz|w|mah)?(?![a-z0-9])'
+      : '(?![a-z0-9])';
+
+    return new RegExp(`(?<![a-z0-9])${corePattern}${endBoundary}`, 'i');
+  }
+
+  matchesTerm(normalizedHaystack, rawTerm) {
+    const regex = this.buildTermRegex(rawTerm);
+    if (!regex) return true;
+    return regex.test(normalizedHaystack);
+  }
+
   buildTargetUrl(searchConfig) {
     if (searchConfig.vinted_url) {
       return searchConfig.vinted_url;
@@ -230,21 +330,23 @@ class VintedPlaywrightScraper {
       ? searchConfig.extra_filters
       : {};
 
-    // Construir search_text combinando keywords con atributos textuales de extra_filters
+    // Construir search_text limpio (sin comillas ni términos excluidos con -) combinando keywords y extra_filters
     const textParts = [];
+    const { cleanSearchText } = this.parseSearchKeywords(searchConfig.keywords);
     const hasExplicitKeywords = Boolean(searchConfig.keywords && String(searchConfig.keywords).trim());
-    if (hasExplicitKeywords) {
-      textParts.push(String(searchConfig.keywords).trim());
-    } else if (extraKeyword) {
+
+    if (cleanSearchText) {
+      textParts.push(cleanSearchText);
+    } else if (!hasExplicitKeywords && extraKeyword) {
       textParts.push(extraKeyword);
     }
 
     const textFilterKeys = ['brand', 'model', 'version', 'color', 'storage_capacity', 'isbn', 'author', 'publisher'];
     for (const key of textFilterKeys) {
       const val = extra[key];
-      if (val !== undefined && val !== null && String(val).trim() !== '' && String(val) !== 'true') {
+      if (val !== undefined && val !== null && String(val).trim() !== '' && String(val) !== 'true' && String(val) !== 'false') {
         const cleanVal = String(val).trim();
-        const alreadyIncluded = textParts.some(p => p.toLowerCase().includes(cleanVal.toLowerCase()));
+        const alreadyIncluded = textParts.some(p => this.normalizeText(p).includes(this.normalizeText(cleanVal)));
         if (!alreadyIncluded) {
           textParts.push(cleanVal);
         }
@@ -294,7 +396,8 @@ class VintedPlaywrightScraper {
   }
 
   matchesExtraFilters(rawProduct, searchConfig) {
-    const amount = Number(rawProduct.price?.amount);
+    const rawAmount = rawProduct.price?.amount !== undefined ? rawProduct.price.amount : rawProduct.price;
+    const amount = Number(rawAmount);
     if (!isNaN(amount)) {
       if (searchConfig.min_price !== undefined && searchConfig.min_price !== null && searchConfig.min_price !== '') {
         if (amount < Number(searchConfig.min_price)) return false;
@@ -308,24 +411,74 @@ class VintedPlaywrightScraper {
       ? searchConfig.extra_filters
       : {};
 
-    // Si hay filtro de talla (size), comprobar contra secondLine (ej. "M · Muy bueno") o título
-    if (extra.size && String(extra.size).trim() !== '') {
-      const targetSize = String(extra.size).trim().toLowerCase();
-      const secondLine = String(rawProduct.itemBox?.secondLine || '').toLowerCase();
-      const sizeToken = secondLine.includes('·') ? secondLine.split('·')[0].trim() : '';
-      const title = String(rawProduct.title || '').toLowerCase();
-      if (sizeToken && sizeToken !== targetSize && !sizeToken.includes(targetSize) && !title.includes(targetSize)) {
+    const title = String(rawProduct.title || '');
+    const brand = String(rawProduct.itemBox?.firstLine || rawProduct.brand_title || '');
+    const secondLine = String(rawProduct.itemBox?.secondLine || rawProduct.size_title || rawProduct.status || '');
+    const normalizedHaystack = this.normalizeText(`${title} | ${brand}`);
+    const normalizedTitle = this.normalizeText(title);
+
+    // 1. Validar keywords: frases exactas ("..."), palabras obligatorias y exclusiones (-...)
+    const { requiredPhrases, requiredWords, excludedTerms } = this.parseSearchKeywords(searchConfig.keywords);
+
+    for (const phrase of requiredPhrases) {
+      if (!this.matchesTerm(normalizedHaystack, phrase)) {
         return false;
       }
     }
 
-    // Si hay filtro de marca (brand), comprobar contra firstLine (marca en Vinted) o título
-    if (extra.brand && String(extra.brand).trim() !== '') {
-      const targetBrand = String(extra.brand).trim().toLowerCase();
-      const firstLine = String(rawProduct.itemBox?.firstLine || '').toLowerCase();
-      const title = String(rawProduct.title || '').toLowerCase();
-      if (firstLine && !firstLine.includes(targetBrand) && !title.includes(targetBrand)) {
+    for (const word of requiredWords) {
+      if (!this.matchesTerm(normalizedHaystack, word)) {
         return false;
+      }
+    }
+
+    for (const excluded of excludedTerms) {
+      if (this.matchesTerm(normalizedHaystack, excluded)) {
+        return false;
+      }
+    }
+
+    // 2. Validar exclusiones adicionales en extra_filters.excluded
+    if (extra.excluded && String(extra.excluded).trim() !== '') {
+      const extraExcludedParsed = this.parseSearchKeywords(String(extra.excluded).replace(/,/g, ' '));
+      const allExtraExcluded = [
+        ...extraExcludedParsed.requiredPhrases,
+        ...extraExcludedParsed.requiredWords,
+        ...extraExcludedParsed.excludedTerms
+      ];
+      for (const excluded of allExtraExcluded) {
+        if (this.matchesTerm(normalizedHaystack, excluded)) {
+          return false;
+        }
+      }
+    }
+
+    // 3. Validar filtro de talla (size) contra secondLine/size_title o título
+    if (extra.size && String(extra.size).trim() !== '') {
+      const targetSize = String(extra.size).trim();
+      const sizePart = secondLine.includes('·') ? secondLine.split('·')[0].trim() : String(rawProduct.size_title || '');
+      const normalizedSizePart = this.normalizeText(sizePart);
+      const matchesInSizeField = normalizedSizePart && (
+        normalizedSizePart === this.normalizeText(targetSize) ||
+        this.matchesTerm(normalizedSizePart, targetSize)
+      );
+      const matchesInTitle = this.matchesTerm(normalizedTitle, targetSize);
+      if (!matchesInSizeField && !matchesInTitle) {
+        return false;
+      }
+    }
+
+    // 4. Validar todos los filtros textuales definidos en extra_filters
+    const textFilterKeys = [
+      'brand', 'model', 'version', 'color', 'storage_capacity',
+      'isbn', 'author', 'publisher', 'subcategory', 'subcategory_lv2', 'description'
+    ];
+    for (const key of textFilterKeys) {
+      const val = extra[key];
+      if (val !== undefined && val !== null && String(val).trim() !== '' && String(val) !== 'true' && String(val) !== 'false') {
+        if (!this.matchesTerm(normalizedHaystack, String(val).trim())) {
+          return false;
+        }
       }
     }
 
