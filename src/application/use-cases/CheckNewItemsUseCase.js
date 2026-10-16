@@ -46,8 +46,9 @@ class CheckNewItemsUseCase {
   }
 
   getSearchCacheKey(search) {
-    if (search.url) return search.url;
     return JSON.stringify({
+      url: search.url || '',
+      vinted_url: search.vinted_url || '',
       keywords: search.keywords || '',
       min_price: search.min_price,
       max_price: search.max_price,
@@ -60,7 +61,9 @@ class CheckNewItemsUseCase {
       latitude: search.latitude,
       longitude: search.longitude,
       distance_in_km: search.distance_in_km,
-      extra_filters: search.extra_filters || null
+      extra_filters: search.extra_filters || null,
+      wallapop_enabled: search.wallapop_enabled !== false,
+      vinted_enabled: search.vinted_enabled !== false
     });
   }
 
@@ -153,7 +156,15 @@ class CheckNewItemsUseCase {
 
         for (const search of enabledSearches) {
           const searchName = search.name || search.keywords || 'Sin nombre';
-          console.log(`🤖 [Agent] Running search "${searchName}" for user ${userEmail}...`);
+          const wallapopEnabled = search.wallapop_enabled !== false;
+          const vintedEnabled = search.vinted_enabled !== false;
+
+          if (!wallapopEnabled && !vintedEnabled) {
+            console.log(`🤖 [Agent] Skipping search "${searchName}": both Wallapop and Vinted are disabled.`);
+            continue;
+          }
+
+          console.log(`🤖 [Agent] Running search "${searchName}" for user ${userEmail}... (Wallapop: ${wallapopEnabled ? 'ON' : 'OFF'}, Vinted: ${vintedEnabled ? 'ON' : 'OFF'})`);
 
           try {
             const cacheKey = this.getSearchCacheKey(search);
@@ -250,7 +261,15 @@ class CheckNewItemsUseCase {
           console.log(`🤖 [Agent] Skipping disabled search "${searchName}".`);
           continue;
         }
-        console.log(`🤖 [Agent] Running search for "${searchName}"...`);
+        const wallapopEnabled = search.wallapop_enabled !== false;
+        const vintedEnabled = search.vinted_enabled !== false;
+
+        if (!wallapopEnabled && !vintedEnabled) {
+          console.log(`🤖 [Agent] Skipping search "${searchName}": both Wallapop and Vinted are disabled.`);
+          continue;
+        }
+
+        console.log(`🤖 [Agent] Running search for "${searchName}"... (Wallapop: ${wallapopEnabled ? 'ON' : 'OFF'}, Vinted: ${vintedEnabled ? 'ON' : 'OFF'})`);
         
         try {
           const items = await this.scraper.scrape(search);

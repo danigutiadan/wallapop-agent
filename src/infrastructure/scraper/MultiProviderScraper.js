@@ -11,18 +11,29 @@ class MultiProviderScraper {
     let wallapopItems = [];
     let vintedItems = [];
 
-    try {
-      wallapopItems = await this.wallapopScraper.scrape(searchConfig);
-      console.log(`🕷️ [MultiScraper] Wallapop returned ${wallapopItems.length} item(s).`);
-    } catch (error) {
-      console.error(`🕷️ [MultiScraper] Error scraping Wallapop:`, error.message);
+    const isWallapopEnabled = searchConfig.wallapop_enabled !== false;
+    const isVintedEnabled = searchConfig.vinted_enabled !== false;
+
+    if (isWallapopEnabled) {
+      try {
+        wallapopItems = await this.wallapopScraper.scrape(searchConfig);
+        console.log(`🕷️ [MultiScraper] Wallapop returned ${wallapopItems.length} item(s).`);
+      } catch (error) {
+        console.error(`🕷️ [MultiScraper] Error scraping Wallapop:`, error.message);
+      }
+    } else {
+      console.log(`🕷️ [MultiScraper] Wallapop is disabled for search "${searchConfig.name || searchConfig.keywords || ''}". Skipping.`);
     }
 
-    try {
-      vintedItems = await this.vintedScraper.scrape(searchConfig);
-      console.log(`👗 [MultiScraper] Vinted returned ${vintedItems.length} item(s).`);
-    } catch (error) {
-      console.error(`👗 [MultiScraper] Error scraping Vinted:`, error.message);
+    if (isVintedEnabled) {
+      try {
+        vintedItems = await this.vintedScraper.scrape(searchConfig);
+        console.log(`👗 [MultiScraper] Vinted returned ${vintedItems.length} item(s).`);
+      } catch (error) {
+        console.error(`👗 [MultiScraper] Error scraping Vinted:`, error.message);
+      }
+    } else {
+      console.log(`👗 [MultiScraper] Vinted is disabled for search "${searchConfig.name || searchConfig.keywords || ''}". Skipping.`);
     }
 
     return [...wallapopItems, ...vintedItems];
