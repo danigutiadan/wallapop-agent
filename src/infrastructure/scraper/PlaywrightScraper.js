@@ -3,6 +3,7 @@ const stealth = require('puppeteer-extra-plugin-stealth')();
 chromium.use(stealth);
 
 const Item = require('../../domain/models/Item');
+const { normalizeText, matchesPriceRange, matchesKeywordQuery } = require('../../domain/services/searchMatcher');
 
 const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -82,6 +83,7 @@ class PlaywrightScraper {
     const page = await context.newPage();
     this.page = page;
     let itemsMap = new Map();
+    let discardedCount = 0;
     let apiInterceptionTimeout = null;
     let debounceTimer = null;
     let resolveSearch = null;
@@ -98,9 +100,14 @@ class PlaywrightScraper {
                     const sectionType = json.data?.section?.type;
                     const sectionItems = json.data?.section?.items || [];
                     
+                    // Solo resultados orgánicos: cuando se agotan, Wallapop lanza 'vector_search_results' (semánticos, no relacionados)
                     if (sectionType === 'organic_search_results') {
                         console.log(`🕷️ [Scraper] Intercepted search chunk: itemsCount=${sectionItems.length}`);
                         sectionItems.forEach(rawItem => {
+                            if (!this.matchesSearchCriteria(rawItem, searchConfig)) {
+                                discardedCount++;
+                                return;
+                            }
                             itemsMap.set(rawItem.id, new Item({
                               id: rawItem.id,
                               provider: 'wallapop',
@@ -145,7 +152,21 @@ class PlaywrightScraper {
         if (debounceTimer) clearTimeout(debounceTimer);
     }
     
+    if (discardedCount > 0) {
+        console.log(`🕷️ [Scraper] Discarded ${discardedCount} item(s) not matching the search criteria.`);
+    }
     return Array.from(itemsMap.values());
+  }
+
+  // Wallapop busca también en la descripción e ignora las exclusiones (-término), así que
+  // re-validamos keywords, exclusiones y precio igual que en Vinted antes de notificar.
+  // Si la búsqueda usa una URL personalizada no hay keywords que validar.
+  matchesSearchCriteria(rawItem, searchConfig) {
+    if (searchConfig.url) return true;
+    const rawAmount = rawItem.price?.amount !== undefined ? rawItem.price.amount : rawItem.price;
+    if (!matchesPriceRange(rawAmount, searchConfig)) return false;
+    const normalizedHaystack = normalizeText(`${rawItem.title || ''} | ${rawItem.description || ''}`);
+    return matchesKeywordQuery(normalizedHaystack, searchConfig);
   }
 
   async getSellerStats(userId) {
