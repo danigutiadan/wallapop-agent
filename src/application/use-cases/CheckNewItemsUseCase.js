@@ -2,47 +2,25 @@ const TelegramNotifier = require('../../infrastructure/notifications/TelegramNot
 const Item = require('../../domain/models/Item');
 
 class CheckNewItemsUseCase {
-  constructor(scraper, database, localDatabase, notifier) {
+  constructor(scraper, database) {
     this.scraper = scraper;
     this.database = database;
-    this.localDatabase = localDatabase;
-    this.notifier = notifier;
-    this.seenProductIds = new Set();
-    this.isFirstRun = true;
-    this.config = null;
+    this.checkIntervalMinutes = Number(process.env.CHECK_INTERVAL_MINUTES) || 5;
+  }
+
+  get config() {
+    return { check_interval_minutes: this.checkIntervalMinutes };
   }
 
   async init() {
-    console.log('🤖 [Agent] Loading configuration...');
+    console.log('🤖 [Agent] Initializing multi-user search agent...');
     
-    if (this.database.isFirebaseEnabled()) {
-      console.log('🤖 [Agent] Firebase enabled: multi-user mode active.');
-      const fbConfig = await this.database.getConfig();
-      this.config = fbConfig || { check_interval_minutes: 5 };
-    } else {
-      this.config = await this.localDatabase.getConfig();
-      if (!this.config) {
-        console.error('🤖 [Agent] Configuration not found.');
-        process.exit(1);
-      }
-      const seenArray = await this.localDatabase.getSeenProducts();
-      this.seenProductIds = new Set(seenArray || []);
-      console.log(`🤖 [Agent] Loaded ${this.seenProductIds.size} seen product IDs.`);
+    if (!this.database.isFirebaseEnabled()) {
+      console.error('🤖 [Agent] Firebase is not enabled. Multi-user mode requires Firebase.');
+      process.exit(1);
     }
-  }
-
-  async reloadConfig() {
-    if (this.database.isFirebaseEnabled()) {
-      const fbConfig = await this.database.getConfig();
-      if (fbConfig) {
-        this.config = fbConfig;
-      }
-    } else {
-      const localConfig = await this.localDatabase.getConfig();
-      if (localConfig) {
-        this.config = localConfig;
-      }
-    }
+    
+    console.log(`🤖 [Agent] Firebase enabled: multi-user mode active (interval: ${this.checkIntervalMinutes} min).`);
   }
 
   getSearchCacheKey(search) {
@@ -110,16 +88,18 @@ class CheckNewItemsUseCase {
   async run(options = {}) {
     console.log(`\n🤖 [Agent] Starting check cycle at ${new Date().toLocaleString()}...`);
 
-    if (this.database.isFirebaseEnabled()) {
-      const users = await this.database.getAllUsers();
-      if (users.length === 0) {
-        console.log('🤖 [Agent] No users found in Firebase.');
-        return;
-      }
-      await this.runMultiUser(users, options);
-    } else {
-      await this.runLegacy(options);
+    if (!this.database.isFirebaseEnabled()) {
+      console.error('🤖 [Agent] Firebase is not enabled. Multi-user mode requires Firebase.');
+      return;
     }
+
+    const users = await this.database.getAllUsers();
+    if (users.length === 0) {
+      console.log('🤖 [Agent] No users found in Firebase.');
+      return;
+    }
+
+    await this.runMultiUser(users, options);
   }
 
   async runMultiUser(users, options = {}) {
@@ -241,117 +221,6 @@ class CheckNewItemsUseCase {
     console.log(`🤖 [Agent] Multi-user check cycle complete.`);
   }
 
-  async runLegacy(options = {}) {
-    const { dryRun = false } = options;
-    console.log(`🤖 [Agent] Legacy single-user mode active.`);
-
-    await this.reloadConfig();
-
-    let dbUpdated = false;
-
-    if (!this.config || !this.config.searches) {
-      console.log('🤖 [Agent] No searches configured.');
-      return;
-    }
-
-    try {
-      for (const search of this.config.searches) {
-        const searchName = search.name || search.keywords || 'Sin nombre';
-        if (search.enabled === false) {
-          console.log(`🤖 [Agent] Skipping disabled search "${searchName}".`);
-          continue;
-        }
-        const wallapopEnabled = search.wallapop_enabled !== false;
-        const vintedEnabled = search.vinted_enabled !== false;
-
-        if (!wallapopEnabled && !vintedEnabled) {
-          console.log(`🤖 [Agent] Skipping search "${searchName}": both Wallapop and Vinted are disabled.`);
-          continue;
-        }
-
-        console.log(`🤖 [Agent] Running search for "${searchName}"... (Wallapop: ${wallapopEnabled ? 'ON' : 'OFF'}, Vinted: ${vintedEnabled ? 'ON' : 'OFF'})`);
-        
-        try {
-          const items = await this.scraper.scrape(search);
-          console.log(`🤖 [Agent] Found ${items.length} total items across providers.`);
-          
-          const newItems = items.filter(item => !this.seenProductIds.has(item.id));
-          console.log(`🤖 [Agent] ${newItems.length} items are new.`);
-          
-          if (newItems.length > 0) {
-            const shouldNotify = !this.isFirstRun || this.seenProductIds.size > 0;
-            const minReviews = search.min_reviews !== undefined && search.min_reviews !== null && search.min_reviews !== ''
-              ? Number(search.min_reviews)
-              : (search.min_seller_reviews !== undefined && search.min_seller_reviews !== null && search.min_seller_reviews !== ''
-                  ? Number(search.min_seller_reviews)
-                  : null);
-            const minRating = search.min_seller_rating !== undefined && search.min_seller_rating !== null && search.min_seller_rating !== ''
-              ? Number(search.min_seller_rating)
-              : null;
-            const hasMinReviews = minReviews !== null && !isNaN(minReviews);
-            const hasMinRating = minRating !== null && !isNaN(minRating);
-            
-            for (const item of newItems) {
-              this.seenProductIds.add(item.id);
-              dbUpdated = true;
-
-              if (shouldNotify) {
-                if (hasMinReviews || hasMinRating) {
-                  if (!item.sellerStats) {
-                    item.sellerStats = await this.scraper.getSellerStats(item.userId, item.provider);
-                  }
-                  if (item.sellerStats && item.provider === 'vinted' && (item.sellerStats.city || item.sellerStats.country)) {
-                    item.location = {
-                      city: item.sellerStats.city || 'Vinted',
-                      region2: item.sellerStats.country || 'Europa'
-                    };
-                  }
-                  const evalResult = this.evaluateSellerStats(item.sellerStats, minReviews, minRating);
-                  if (!evalResult.pass) {
-                    console.log(`🤖 [Agent] ❌ Ítem descartado [${item.providerName}] "${item.title}": ${evalResult.reason}`);
-                    continue;
-                  }
-                }
-
-                console.log(`🤖 [Agent] New Listing detected on ${item.providerName}! Sending alerts for "${item.title}"`);
-                
-                if (dryRun) {
-                  console.log(`🤖 [Agent] [DRY RUN] Would notify [${item.providerName}]: "${item.title}"`);
-                  continue;
-                }
-                
-                if (this.config.notifications?.telegram?.enabled) {
-                  await this.notifier.sendNotification(item, searchName);
-                }
-              } else {
-                console.log(`🤖 [Agent] First run: Registered existing item [${item.providerName}] "${item.title}" silently.`);
-              }
-            }
-          }
-        } catch (error) {
-          console.error(`🤖 [Agent] Error executing search "${searchName}":`, error.message);
-        }
-      }
-    } finally {
-      if (this.scraper && typeof this.scraper.close === 'function') {
-        await this.scraper.close();
-      }
-    }
-    
-    if (dbUpdated) {
-      const list = Array.from(this.seenProductIds);
-      if (this.database.isFirebaseEnabled()) {
-        await this.database.saveSeenProducts(list);
-      } else {
-        await this.localDatabase.saveSeenProducts(list);
-      }
-      console.log(`🤖 [Agent] Saved updated seen database. Total seen items: ${this.seenProductIds.size}`);
-    }
-    
-    this.isFirstRun = false;
-    console.log(`🤖 [Agent] Legacy check cycle complete.`);
-  }
-
   async sendTestNotification() {
     console.log('🤖 [Agent] Sending test notification...');
     const dummyItem = new Item({
@@ -363,31 +232,30 @@ class CheckNewItemsUseCase {
       web_slug: 'articulo-de-prueba-12345678'
     });
 
-    if (this.database.isFirebaseEnabled()) {
-      const users = await this.database.getAllUsers();
-      const targetUsers = users.filter(user => {
-        const hasTelegram = !!(user.telegram?.chat_id || user.telegram?.chatId) && !!(user.telegram?.bot_token || user.telegram?.botToken);
-        const enabled = user.telegram?.enabled !== false;
-        return hasTelegram && enabled;
-      });
+    if (!this.database.isFirebaseEnabled()) {
+      console.error('🤖 [Agent] Firebase is not enabled. Cannot fetch users for test notification.');
+      return;
+    }
 
-      if (targetUsers.length === 0) {
-        console.log('🤖 [Agent] No users with Telegram configured found.');
-        return;
-      }
+    const users = await this.database.getAllUsers();
+    const targetUsers = users.filter(user => {
+      const hasTelegram = !!(user.telegram?.chat_id || user.telegram?.chatId) && !!(user.telegram?.bot_token || user.telegram?.botToken);
+      const enabled = user.telegram?.enabled !== false;
+      return hasTelegram && enabled;
+    });
 
-      for (const user of targetUsers) {
-        const botToken = user.telegram?.bot_token || user.telegram?.botToken || null;
-        const chatId = user.telegram?.chat_id || user.telegram?.chatId || null;
-        const notifier = new TelegramNotifier(botToken, chatId);
-        if (notifier.isConfigured()) {
-          console.log(`🤖 [Agent] Sending test notification to user ${user.email || user.id}...`);
-          await notifier.sendNotification(dummyItem, 'Filtro Test');
-        }
-      }
-    } else {
-      if (this.config?.notifications?.telegram?.enabled) {
-        await this.notifier.sendNotification(dummyItem, 'Filtro Test');
+    if (targetUsers.length === 0) {
+      console.log('🤖 [Agent] No users with Telegram configured found.');
+      return;
+    }
+
+    for (const user of targetUsers) {
+      const botToken = user.telegram?.bot_token || user.telegram?.botToken || null;
+      const chatId = user.telegram?.chat_id || user.telegram?.chatId || null;
+      const notifier = new TelegramNotifier(botToken, chatId);
+      if (notifier.isConfigured()) {
+        console.log(`🤖 [Agent] Sending test notification to user ${user.email || user.id}...`);
+        await notifier.sendNotification(dummyItem, 'Filtro Test');
       }
     }
   }

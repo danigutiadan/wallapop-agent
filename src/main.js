@@ -2,8 +2,6 @@ require('dotenv').config();
 
 const MultiProviderScraper = require('./infrastructure/scraper/MultiProviderScraper');
 const FirebaseRepository = require('./infrastructure/database/FirebaseRepository');
-const LocalFileRepository = require('./infrastructure/database/LocalFileRepository');
-const TelegramNotifier = require('./infrastructure/notifications/TelegramNotifier');
 const CheckNewItemsUseCase = require('./application/use-cases/CheckNewItemsUseCase');
 
 async function main() {
@@ -19,11 +17,9 @@ async function main() {
   // 1. Initialize Infrastructure (Adapters)
   const scraper = new MultiProviderScraper();
   const database = new FirebaseRepository();
-  const localDatabase = new LocalFileRepository();
-  const notifier = new TelegramNotifier();
 
   // 2. Initialize Application (Use Cases)
-  const checkNewItemsUseCase = new CheckNewItemsUseCase(scraper, database, localDatabase, notifier);
+  const checkNewItemsUseCase = new CheckNewItemsUseCase(scraper, database);
   await checkNewItemsUseCase.init();
 
   // 3. Handle Arguments
